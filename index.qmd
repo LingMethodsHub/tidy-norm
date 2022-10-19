@@ -2,25 +2,316 @@
 title: "Vowel Normalization (Tidy)"
 format: html
 editor: visual
+knitr: 
+  opts_chunk: 
+    message: false
+description: "A tutorial on how to normalize vowel formant measurments in R using the tidyverse"
+bibliography: references.bib
 ---
-
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
-
-```{r}
-1 + 1
-```
-
-You can add options to executable code like this
 
 ```{r}
 #| echo: false
-2 * 2
+source(".Rprofile")
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+This is a tutorial about how to "normalize" vowel formant data using data tools from the [tidyverse](https://www.tidyverse.org/). A *lot* has been written about vowel normalization (why we do it, how it should work, what methods are best) that I can't really cover here, although @Adank2004 is often taken as the canonical citation, and I'll be taking into account the recent "order of operations" from @stanley2022.
+
+There's also a `vowels` R package [@vowels] that basically lets you run [the NORM suite locally](http://lingtools.uoregon.edu/norm/norm1_methods.php).
+
+There are still many occasions when you might want or need to normalize your vowel data yourself, though, and learning how to do it is actually a great introduction to a number of tidyverse "verbs", especially:
+
+-   [`dplyr::group_by()`](https://dplyr.tidyverse.org/reference/group_by.html)
+
+-   [`dplyr::summarise()`](https://dplyr.tidyverse.org/reference/summarise.html)
+
+-   [`dplyr::mutate()`](https://dplyr.tidyverse.org/reference/mutate.html)
+
+-   [`tidyr::pivot_longer()`](https://tidyr.tidyverse.org/reference/pivot_longer.html)
+
+-   [`tidyr::pivot_wider()`](https://tidyr.tidyverse.org/reference/pivot_wider.html)
+
+Since I'm focusing on how data structures relate to vowel normalization, I'll cover 3 specific normalization procedures:
+
+### Lobanov (a.k.a. z-scoring)
+
+In terms of tidy data procedures, this is the simplest. All it requires is a `group_by()` and a `mutate()`
+
+### Neary 2
+
+This procedure is a little more complicated, involving "pivoting" our data from wide to long, then long to wide again, using `pivot_longer()` and `pivot_wider()`.
+
+### Watt & Fabricius
+
+This method requires estimating by-speaker scaling factors (using `group_by()` and `summarise()`) then merging them back onto the original data (with `left_join()`).
+
+## Setup
+
+To begin with, I'm going to import a few packages:
+
+-   `tidyverse`: This is a "metapackage" that imports many different packages that contain functions we'll need, including `ggplot2`
+
+-   `ggforce`: This is a package that extends some of `ggplot2`'s functionality
+
+-   `khroma`: This is another packages that has many different color palates for `ggplot2`.
+
+-   `joeyr`: This is a package with functions written by Joey Stanley for vowel analysis.
+
+Any time I use a function that's not loaded by the tidyverse, I'll indicate it with the `package::function()` convention.
+
+```{r}
+#| label: load
+library(tidyverse)
+library(ggforce)
+library(khroma)
+# remotes::install_github("JoeyStanley/joeyr")
+library(joeyr)
+
+# set the ggplot2 theme
+theme_set(theme_minimal())
+```
+
+We also need to load in some data. Here are two tab-delimited files of [Buckeye Corpus](https://buckeyecorpus.osu.edu/) speakers whose interviews were run through [FAVE](https://github.com/JoFrhwld/FAVE).
+
+``` r
+s01_url <- "{{< meta website.site-url >}}/content/R/norm-tidy/data/s01.txt"
+s03_url <- "{{< meta website.site-url >}}/content/R/norm-tidy/data/s03.txt"
+```
+
+```{r}
+#| label: data_loc
+#| echo: false
+s01_url <- "data/s01.txt"
+s03_url <- "data/s03.txt"
+```
+
+This code should load these files.
+
+```{r}
+#| label: read_data
+vowels_orig <- map_dfr(c(s01_url, s03_url), 
+                       ~read_tsv(.x, col_types=cols(sex = 'c')))
+```
+
+<details>
+
+<summary>What that `map_dfr` thing did:</summary>
+
+The `map_dfr` function iterated over each url, and applied the function `read_tsv()` to them. I had to tell `read_tsv()` that the column `sex` should be treated as a character data type, since the value `f` gets reinterpreted as `FALSE` otherwise. After reading in each tab-delimited file, `map_dfr()` then combines the results together row-wise, to produce one large data frame.
+
+</details>
+
+The variable `vowels_orig` is now one large data frame with both speakers' FAVE output in it. Here's three randomly sampled rows from each speakers' data.
+
+```{r}
+#| label: tbl-vowel-orig
+#| tbl-cap: "Three randomly sampled rows from each speaker's data"
+#| tbl-cap-location: bottom
+#| results: markup
+set.seed(50)
+vowels_orig %>%
+  group_by(name) %>%
+  slice_sample(n = 3) %>%
+  knitr::kable()
+```
+
+FAVE outputs a lot of useful information, but for this tutorial, I want to narrow down our focus to just a few columns
+
+-   `name`: We'll use this as a unique ID for each speaker
+
+-   `word`: It's just good to keep this info around
+
+-   `ipa_vclass`: A column indicating each token's vowel class in an IPA-like format
+
+-   `F1`, `F2`: What we're all here for. The first and second formants.
+
+```{r}
+#| label: vowel_focus
+vowels_orig %>%
+  select(name, word, ipa_vclass, F1, F2) -> vowels_focus
+```
+
+```{r}
+#| label: tbl-vowel-focus
+#| tbl-cap: "The first few rows of the data we're going to work with"
+vowels_focus %>%
+  head() %>%
+  knitr::kable()
+```
+
+## Unnormalized
+
+First, let's see how things look when we get our vowel means and plot them unnormalized. I won't go into detail about how the plotting code works (see the LingMethodsHub tutorial on [ggplot2 vowel plots](https://lingmethodshub.github.io/content/R/vowel-plots-tutorial/)).
+
+```{r}
+#| label: fig-unnorm1
+#| fig-width: 6
+#| fig-height: 5
+#| fig-cap: "Speakers' vowel means in unnormalized F1,F2 space."
+#| fig-alt: "An F1 by F2 plot of two speakers' unnormalized vowel means."
+vowels_focus %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), .fns = mean)) %>%
+  ungroup() %>%
+  ggplot(aes(F2, F1, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()
+```
+
+Here, we see reason number 1 why we'll want to normalize vowels. These two speakers vowel spaced hardly overlap, but the *relative* position of vowel categories inside their spaces are fairly similar. All normalization methods try to do is pinch and scale *appropriately* to get the relative positions of these vowel spaces to overlap.
+
+*Another* reason we might be motivated to normalize our data is because F2 has a much larger range of data than F1. We can more easily see that if we add `coord_fixed()` to the plot.
+
+```{r}
+#| label: fig-unnorm2
+#| fig-width: 6
+#| fig-height: 2
+#| fig-cap: "Speakers' vowel means in unnormalized F1,F2 space. (fixed coords)"
+#| fig-alt: "An F1 by F2 plot of two speakers' unnormalized vowel means."
+vowels_focus %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), .fns = mean)) %>%
+  ungroup() %>%
+  ggplot(aes(F2, F1, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()+
+    coord_fixed()
+```
+
+The plot is squished because F2 just has that much larger a range of values than F1. Any stats or calculations we do on vowels in the F1$\times$F2 space is going to be dominated by things that happen across F2 vs F1.
+
+## Prepping for normalization
+
+In order to get ready for normalization, I'm going to first filter out any vowel tokens that have a $\sqrt{\text{mahalanobis}}$ distance from its vowel class greater than 2.
+
+```{r}
+vowels_focus %>%
+  group_by(name, ipa_vclass) %>%
+  mutate(mahal = joeyr::tidy_mahalanobis(F1, F2),
+         mahal_sq = sqrt(mahal)) %>%
+  filter(mahal_sq <= 2) -> vowels_inlie
+```
+
+## Normalizations
+
+### Lobanov a.k.a. z-score
+
+```{r}
+#| label: zscore1
+#| code-line-numbers: true
+vowels_zcore1 <- vowels_inlie %>%
+                  group_by(name) %>%
+                  mutate(F1_z = (F1 - mean(F1))/sd(F1),
+                         F2_z = (F2 - mean(F2))/sd(F2))
+```
+
+```{r}
+#| label: zscore2
+#| code-line-numbers: true
+vowels_zcore2 <- vowels_inlie %>%
+                  group_by(name) %>%
+                  mutate(F1_z = scale(F1),
+                         F2_z = scale(F2))
+```
+
+```{r}
+vowels_zcore2 %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1_z, F2_z), .fns = mean)) %>%
+  ggplot(aes(F2_z, F1_z, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    scale_color_bright()+
+    scale_fill_bright()+
+    coord_fixed()
+```
+
+### Neary (a.k.a. Neary 2)
+
+```{r}
+vowels_inlie %>%
+  select(name, word, ipa_vclass, F1, F2) %>%
+  mutate(id = 1:n()) %>%
+  pivot_longer(cols = F1:F2, 
+               names_to = "formant", 
+               values_to = "hz") %>%
+  group_by(name) %>%
+  mutate(neary = log(hz)-mean(log(hz)))%>%
+  select(-hz) %>%
+  pivot_wider(names_from = formant, values_from = neary) -> neary_norm
+```
+
+```{r}
+neary_norm %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), .fns = mean)) %>%
+  ggplot(aes(F2, F1, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    scale_color_bright()+
+    scale_fill_bright()+
+    coord_fixed()
+```
+
+### Watt & Fabricius
+
+```{r}
+vowels_inlie %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), mean)) %>%
+  group_by(name) %>%
+  summarise(beet_f1 = min(F1),
+            beet_f2 = max(F2),
+            bat_f1 = max(F1),
+            bat_f2 = F2[F1 == max(F1)]) %>%
+  mutate(school_f1 = beet_f1,
+         school_f2 = beet_f1) %>%
+  pivot_longer(cols = beet_f1:school_f2, names_to = "var", values_to = "hz") %>%
+  separate(var, into = c("point", "formant")) %>%
+  pivot_wider(names_from = formant, values_from = hz) -> wf_points
+
+wf_points %>%
+  ggplot(aes(-f2, -f1))+
+    geom_polygon(aes(fill = name))+
+    geom_text(aes(label = point))+
+    scale_fill_bright()
+```
+
+```{r}
+wf_points %>%
+  group_by(name) %>%
+  summarise(S1 = mean(f1),
+           S2 = mean(f2)) -> wf_scalers
+```
+
+```{r}
+vowels_inlie %>%
+  left_join(wf_scalers) %>%
+  mutate(F1_wf = F1/S1,
+         F2_wf = F2/S2)->vowels_wf
+```
+
+```{r}
+vowels_wf %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1_wf, F2_wf), .fns = mean)) %>%
+  ggplot(aes(F2_wf, F1_wf, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    scale_color_bright()+
+    scale_fill_bright()+
+    coord_fixed()
+```
