@@ -11,7 +11,6 @@ categories:
   - "vowels"
   - "normalization"
   - "R"
-citation: true
 ---
 
 ```{r}
@@ -41,7 +40,7 @@ Since I'm focusing on how data structures relate to vowel normalization, I'll co
 
 In terms of tidy data procedures, this is the simplest. All it requires is a `group_by()` and a `mutate()`
 
-### Neary 2
+### Nearey 2
 
 This procedure is a little more complicated, involving "pivoting" our data from wide to long, then long to wide again, using `pivot_longer()` and `pivot_wider()`.
 
@@ -284,11 +283,11 @@ Next, we'll look at what the vowels package calls "Nearey 2" normalization [@nea
 
 -   Within each speaker ⤵️
 
-    -   Convert *all* formant measurements to log-hz
+    -   Convert *all* formant measurements to log-Hz
 
-    -   Get the mean log-hz across all measurements (F1 and F2 *together*)
+    -   Get the mean log-Hz across all measurements (F1 and F2 *together*)
 
-    -   Subtract the mean log-hz from the log-hz
+    -   Subtract the mean log-Hz from the log-Hz
 
     -   "Anti-log" or exponentiate the result
 
@@ -323,9 +322,9 @@ vowels_inlie %>%
 
 #### Step 3: Pivot Longer
 
-Now, we want to take the F1 and F2 columns, and stack them one on top of eachother, which we can do with `pivot_longer()`. This function needs to know at least three things:
+Now, we want to take the F1 and F2 columns, and stack them one on top of each other, which we can do with `pivot_longer()`. This function needs to know at least three things:
 
--   Which columns are we going to be stacking on top of eachother?
+-   Which columns are we going to be stacking on top of each other?
 
     -   We pass this information to the `cols=` argument.
 
@@ -510,7 +509,7 @@ vowels_inlie %>%
 
 In order to plot these points in an F1$\times$F2 space, we need to do a little `pivot_longer()` and `pivot_wider()` again with the following steps:
 
--   `pivot_longer()`, to stack the values of the columns between `beet_f1` and `school_f2` on top of eachother.
+-   `pivot_longer()`, to stack the values of the columns between `beet_f1` and `school_f2` on top of each other.
 
 -   Split the point names (e.g. "`beet_f1"`) into separate values (e.g. `"beet"` and `"beet"`) using `separate()`.
 
