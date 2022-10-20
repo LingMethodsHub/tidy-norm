@@ -3,7 +3,7 @@ title: "How to normalize your vowels using the tidyverse"
 format: html
 editor: visual
 knitr: 
-  opts_chunk: git
+  opts_chunk: 
     message: false
 description: "A tutorial on how to normalize vowel formant measurments in R using the tidyverse"
 bibliography: references.bib
