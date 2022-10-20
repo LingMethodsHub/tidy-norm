@@ -11,3 +11,5 @@ citation:
 image: "index_files/figure-html/fig-unnorm1-1.png"
 twitter-card:
   image: "index_files/figure-html/fig-unnorm1-1.png"
+  
+resources: "data/*"

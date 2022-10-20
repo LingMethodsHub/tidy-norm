@@ -3,7 +3,7 @@ title: "How to normalize your vowels using the tidyverse"
 format: html
 editor: visual
 knitr: 
-  opts_chunk: 
+  opts_chunk: git
     message: false
 description: "A tutorial on how to normalize vowel formant measurments in R using the tidyverse"
 bibliography: references.bib
@@ -77,8 +77,8 @@ theme_set(theme_minimal())
 We also need to load in some data. Here are two tab-delimited files of [Buckeye Corpus](https://buckeyecorpus.osu.edu/) speakers whose interviews were run through [FAVE](https://github.com/JoFrhwld/FAVE).
 
 ``` r
-s01_url <- "{{< meta website.site-url >}}/content/R/norm-tidy/data/s01.txt"
-s03_url <- "{{< meta website.site-url >}}/content/R/norm-tidy/data/s03.txt"
+s01_url <- "{{< meta website.site-url >}}/content/R/tidy-norm/data/s01.txt"
+s03_url <- "{{< meta website.site-url >}}/content/R/tidy-norm/data/s03.txt"
 ```
 
 ```{r}
