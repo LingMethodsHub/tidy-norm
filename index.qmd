@@ -143,6 +143,8 @@ vowels_focus %>%
 First, let's see how things look when we get our vowel means and plot them unnormalized. I won't go into detail about how the plotting code works (see the LingMethodsHub tutorial on [ggplot2 vowel plots](https://lingmethodshub.github.io/content/R/vowel-plots-tutorial/)).
 
 ```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
 #| label: fig-unnorm1
 #| fig-width: 6
 #| fig-height: 5
@@ -166,6 +168,8 @@ Here, we see reason number 1 why we'll want to normalize vowels. These two speak
 *Another* reason we might be motivated to normalize our data is because F2 has a much larger range of data than F1. We can more easily see that if we add `coord_fixed()` to the plot.
 
 ```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
 #| label: fig-unnorm2
 #| fig-width: 6
 #| fig-height: 2
@@ -196,33 +200,59 @@ vowels_focus %>%
   group_by(name, ipa_vclass) %>%
   mutate(mahal = joeyr::tidy_mahalanobis(F1, F2),
          mahal_sq = sqrt(mahal)) %>%
-  filter(mahal_sq <= 2) -> vowels_inlie
+  filter(mahal_sq <= 2) %>%
+  ungroup() -> vowels_inlie
 ```
 
 ## Normalizations
 
 ### Lobanov a.k.a. z-score
 
+The first normalization procedure we'll look at is "Lobanov" normalization [@lobanov]. An important thing to know here is that while phoneticians may call this procedure "Lobanov" normalization, the rest of the data analysis world calls it "z-score" or even just "standard score."
+
+The process works like this:
+
+-   Within each speaker's data ⤵️
+
+    -   Within each formant ⤵️
+
+        -   subtract the mean of the formant, and divide by the standard deviation of the formant
+
+Since we already a have F1 and F2 separated out into separate columns, this means all we have to do us `group_by()` our vowels data by speaker ID (in `name`), then create our new normalized columns by subtracting the mean and dividing by the standard deviation.
+
 ```{r}
 #| label: zscore1
-#| code-line-numbers: true
-vowels_zcore1 <- vowels_inlie %>%
-                  group_by(name) %>%
-                  mutate(F1_z = (F1 - mean(F1))/sd(F1),
-                         F2_z = (F2 - mean(F2))/sd(F2))
+vowels_inlie %>%
+  group_by(name) %>%
+  mutate(F1_z = (F1 - mean(F1))/sd(F1),
+         F2_z = (F2 - mean(F2))/sd(F2)) -> vowels_score1
 ```
+
+The `group_by(name)` process in this pipeline means that when we calculate `mean(F1)` and `std(F1)` in the next part, those mean and standard deviation values are for each speaker's subset of `vowels_inlie`.
+
+Since z-scoring is so common a thing to do in quantitative analysis, R actually has a built in function, `scale()` that we could use instead of writing the math out ourselves.
 
 ```{r}
 #| label: zscore2
-#| code-line-numbers: true
-vowels_zcore2 <- vowels_inlie %>%
-                  group_by(name) %>%
-                  mutate(F1_z = scale(F1),
-                         F2_z = scale(F2))
+vowels_inlie %>%
+  group_by(name) %>%
+  mutate(F1_z = scale(F1),
+         F2_z = scale(F2)) -> vowels_zscore2
 ```
 
+#### Results
+
+Here's the results of z-scoring! We've got largely overlapping vowel spaces now. The numeric values of these z-scores tend to run somewhere between -3 and 3 (less extreme for means). Both formants are also on the same scale, which you can see with the plot being roughly square shaped even with `coord_fixed()` being added.
+
 ```{r}
-vowels_zcore2 %>%
+#| code-fold: true
+#| code-summary: "Plot code"
+#| label: fig-zscore
+#| fig-width: 6
+#| fig-height: 5
+#| fig-cap: "Speakers' vowel means in z-scored F1,F2 space. (fixed coords)"
+#| fig-alt: "An F1 by F2 plot of two speakers' lobanov normalized vowel means."
+vowels_zscore2 %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1_z, F2_z), .fns = mean)) %>%
   ggplot(aes(F2_z, F1_z, color = name))+
@@ -230,14 +260,100 @@ vowels_zcore2 %>%
     ggforce::geom_mark_hull(aes(fill = name))+
     scale_x_reverse()+
     scale_y_reverse()+
-    scale_color_bright()+
-    scale_fill_bright()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()+
     coord_fixed()
 ```
 
-### Neary (a.k.a. Neary 2)
+### Nearey (a.k.a. Nearey 2)
+
+Next, we'll look at what the vowels package calls "Nearey 2" normalization [@nearey1978]. The Nearey 1 procedure is more similar in terms of data code as z-scoring.[^1] The Nearey 2 procedure works like this:
+
+[^1]:
+    ``` r
+    vowels_inlie %>%
+      group_by(name) %>%
+      mutate(F1_n = exp(log(F1) - mean(log(F1))),
+             F2_n = exp(log(F2) - mean(log(F2))))
+    ```
+
+-   Within each speaker ⤵️
+
+    -   Convert *all* formant measurements to log-hz
+
+    -   Get the mean log-hz across all measurements (F1 and F2 *together*)
+
+    -   Subtract the mean log-hz from the log-hz
+
+    -   "Anti-log" or exponentiate the result
+
+We need to combine F1 and F2 measurements together to get their mean, and this is best achieved in the tidyverse by "pivoting" the data frame from wide to long. We'll take it in steps. In each next step, I'm going to be putting additional tidyverse verbs between the data frame and the line that has `head() %>% knitr::kable()`, which is just there to provide nice looking output.
+
+#### Step 1: Focus in on the columns of interest
+
+The `vowels_inlie` has data columns for the mahalanobis distance, which I want to drop off for now.
 
 ```{r}
+#| label: tbl-nearey-focus
+#| tbl-cap: "The columns of importance for Neary 2"
+vowels_inlie %>%
+  select(name, word, ipa_vclass, F1, F2) %>%
+  # more verbs to go here
+  head() %>% knitr::kable()
+```
+
+#### Step 2: Add an ID column
+
+When we're pivoting our data long and then wide again, we need to have a column that is a unique id for each vowel observation. I'll create that with `mutate(id = 1:n())` . The `n()` function there is a convenience function that returns the number of rows in each (group) of the data frame.
+
+```{r}
+#| label: tbl-nearey-id
+#| tbl-cap: "The formant data with a token ID for each observation"
+vowels_inlie %>%
+  select(name, word, ipa_vclass, F1, F2) %>%
+  mutate(id = 1:n()) %>%
+  # more verbs to go here
+  head() %>% knitr::kable()
+```
+
+#### Step 3: Pivot Longer
+
+Now, we want to take the F1 and F2 columns, and stack them one on top of eachother, which we can do with `pivot_longer()`. This function needs to know at least three things:
+
+-   Which columns are we going to be stacking on top of eachother?
+
+    -   We pass this information to the `cols=` argument.
+
+-   How should we keep track of the original column names?
+
+    -   We pass this information to `names_to=`.
+
+-   How should we keep track of the original values from these columns?
+
+    -   We pass this information to `values_to=`
+
+```{r}
+#| label: tbl-nearey-long
+#| tbl-cap: "The formant data, pivoted long"
+vowels_inlie %>%
+  select(name, word, ipa_vclass, F1, F2) %>%
+  mutate(id = 1:n()) %>%
+  pivot_longer(cols = F1:F2, 
+               names_to = "formant", 
+               values_to = "hz") %>%  
+  # more verbs to go here
+  head(12) %>% knitr::kable()
+```
+
+You can get an idea for what `pivot_longer()` has done by comparing this table (@tbl-nearey-long) to the table before (@tbl-nearey-id). There are two rows in this long table for every row in the wide table. The `name`, `word`, `ipa_vclass`, and `id` values are repeated twice. There's also a new `formant` column, which contains the column names we pivoted longer, and a new `hz` column, which contains the values from the columns we pivoted longer.
+
+#### Step 4: The actual normalization!
+
+Now we can do the actual normalization. The column we'll target is the new `hz` column. We'll log it, subtract the mean log value, then convert it back to its original scale with `exp()`. And don't forget we need to `group_by(name)` first too!
+
+```{r}
+#| label: tbl-nearey-norm
+#| tbl-cap: "The formant data, pivoted long, and normalized"
 vowels_inlie %>%
   select(name, word, ipa_vclass, F1, F2) %>%
   mutate(id = 1:n()) %>%
@@ -245,13 +361,58 @@ vowels_inlie %>%
                names_to = "formant", 
                values_to = "hz") %>%
   group_by(name) %>%
-  mutate(neary = log(hz)-mean(log(hz)))%>%
-  select(-hz) %>%
-  pivot_wider(names_from = formant, values_from = neary) -> neary_norm
+  mutate(nearey = exp(log(hz)-mean(log(hz))))%>%  
+  # more verbs to go here
+  head(12) %>% knitr::kable(digits = 3)
 ```
 
+#### Step 5: Pivoting wide again, for plotting
+
+Technically, we're done normalizing the formant data, but in order to make a nice F1$\times$F2 plot, we need to pivot the data wide again.
+
+To do that, we first need to drop the `hz` column, because `pivot_wider()` will go weird if we don't.[^2] Then, we need to tell `pivot_wider()` the following information:
+
+[^2]: But you should try it just to see!
+
+-   Where should it get the names of new columns from?
+
+    -   We'll pass this to `names_from=`
+
+-   Where should it get the values to put into the new columns from?
+
+    -   We'll pass this to `values_from=`
+
+After this step, we're done the normalizing process, so I'll assign the result to a variable called `vowels_neary`
+
 ```{r}
-neary_norm %>%
+#| label: tbl-neary-wide
+#| tbl-cap: "Nearey Normalized Vowels, wide again"
+vowels_inlie %>%
+  select(name, word, ipa_vclass, F1, F2) %>%
+  mutate(id = 1:n()) %>%
+  pivot_longer(cols = F1:F2, 
+               names_to = "formant", 
+               values_to = "hz") %>%
+  group_by(name) %>%
+  mutate(nearey = exp(log(hz)-mean(log(hz))))%>%  
+  select(-hz) %>%
+  pivot_wider(names_from = formant, values_from = nearey) -> vowels_nearey
+
+vowels_nearey %>%
+  head() %>% knitr::kable(digits = 3)
+
+```
+
+#### Results!
+
+```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
+#| label: fig-neary-norm
+#| fig-cap: "Speakers' vowel means in Nearey Normalized F1,F2 space."
+#| fig-width: 6.5
+#| fig-height: 5
+vowels_nearey %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1, F2), .fns = mean)) %>%
   ggplot(aes(F2, F1, color = name))+
@@ -259,12 +420,85 @@ neary_norm %>%
     ggforce::geom_mark_hull(aes(fill = name))+
     scale_x_reverse()+
     scale_y_reverse()+
-    scale_color_bright()+
-    scale_fill_bright()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()
+```
+
+Again, the vowel spaces are largely overlapping. One thing that's not immediately clear from this graph, though, is that this specific approach to Nearey normalization still has a much wider range for F2 than F1, which we can see if we plot it with fixed coordinates.
+
+```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
+#| label: fig-neary-norm-fixed
+#| fig-cap: "Speakers' vowel means in Nearey Normalized F1,F2 space (fixed coordinates)."
+#| fig-width: 6.5
+#| fig-height: 2.5
+vowels_nearey %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), .fns = mean)) %>%
+  ggplot(aes(F2, F1, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()+
+    coord_fixed()
+```
+
+It gets better if we plot the log of the normalized values[^3], but then the vowel space doesn't look like the familiar hertz space.
+
+[^3]: Which is a little silly because that's what we had in the normalization code chunk above, and then we did `exp()` on it.
+
+```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
+#| label: fig-neary-log-norm-fixed
+#| fig-cap: "Speakers' vowel means in Log Nearey Normalized F1,F2 space (fixed coordinates)."
+#| fig-width: 6.5
+#| fig-height: 5
+vowels_nearey %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), .fns = ~mean(log(.x)))) %>%
+  ggplot(aes(F2, F1, color = name))+
+    geom_text(aes(label = ipa_vclass))+
+    ggforce::geom_mark_hull(aes(fill = name))+
+    scale_x_reverse()+
+    scale_y_reverse()+
+    khroma::scale_color_vibrant()+
+    khroma::scale_fill_vibrant()+
     coord_fixed()
 ```
 
 ### Watt & Fabricius
+
+The final normalization method we'll look at, which can't easily be done with a single sequence of tidyverse verbs, is the Watt & Fabricius method [@watt2002]. The idea behind the Watt & Fabricius method is to define a vowel space triangle for each speaker, then to scale their formant values to the triangle.
+
+I'll follow the NORM suite and define the points of the triangle like so:
+
+-   Top Left Corner, "beet" point: The F1 of the vowel with the smallest F1, and the F2 of the vowel with the largest F2
+
+-   Bottom Corner, "bat" point: The F1 of the vowel with the maximum F1, and the F2 of that same vowel.
+
+-   Top Right Corner, "school" point: F1 = F2 = "beet" point F1.
+
+Here's how you can get those values per speaker:
+
+```{r}
+vowels_inlie %>%
+  group_by(name, ipa_vclass) %>%
+  summarise(across(c(F1, F2), mean)) %>%
+  group_by(name) %>%
+  summarise(beet_f1 = min(F1),
+            beet_f2 = max(F2),
+            bat_f1 = max(F1),
+            bat_f2 = F2[F1 == max(F1)]) %>%
+  mutate(school_f1 = beet_f1,
+         school_f2 = beet_f1) %>%
+  knitr::kable(digits = 2)
+```
+
+In order to plot these points in an F1$\times$F2 space, we need to do a little `pivot_longer()` and `pivot_wider()` again.
 
 ```{r}
 vowels_inlie %>%
@@ -280,12 +514,21 @@ vowels_inlie %>%
   pivot_longer(cols = beet_f1:school_f2, names_to = "var", values_to = "hz") %>%
   separate(var, into = c("point", "formant")) %>%
   pivot_wider(names_from = formant, values_from = hz) -> wf_points
+```
 
+```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
+#| fig-width: 6
+#| fig-height: 5
 wf_points %>%
-  ggplot(aes(-f2, -f1))+
-    geom_polygon(aes(fill = name))+
+  ggplot(aes(f2, f1))+
+    geom_polygon(aes(fill = name, color = name), alpha = 0.6)+
     geom_text(aes(label = point))+
-    scale_fill_bright()
+    scale_x_reverse()+
+    scale_y_reverse()+
+    scale_fill_vibrant()+
+    scale_color_vibrant()
 ```
 
 ```{r}
@@ -303,6 +546,10 @@ vowels_inlie %>%
 ```
 
 ```{r}
+#| code-fold: true
+#| code-summary: "Plot code"
+#| fig-width: 6
+#| fig-height: 5
 vowels_wf %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1_wf, F2_wf), .fns = mean)) %>%
@@ -311,7 +558,7 @@ vowels_wf %>%
     ggforce::geom_mark_hull(aes(fill = name))+
     scale_x_reverse()+
     scale_y_reverse()+
-    scale_color_bright()+
-    scale_fill_bright()+
+    scale_color_vibrant()+
+    scale_fill_vibrant()+
     coord_fixed()
 ```
