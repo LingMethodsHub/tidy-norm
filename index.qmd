@@ -1,5 +1,5 @@
 ---
-title: "Vowel Normalization (Tidy)"
+title: "How to normalize your vowels using the tidyverse"
 format: html
 editor: visual
 knitr: 
@@ -7,6 +7,11 @@ knitr:
     message: false
 description: "A tutorial on how to normalize vowel formant measurments in R using the tidyverse"
 bibliography: references.bib
+categories:
+  - "vowels"
+  - "normalization"
+  - "R"
+citation: true
 ---
 
 ```{r}
@@ -251,7 +256,7 @@ Here's the results of z-scoring! We've got largely overlapping vowel spaces now.
 #| fig-width: 6
 #| fig-height: 5
 #| fig-cap: "Speakers' vowel means in z-scored F1,F2 space. (fixed coords)"
-#| fig-alt: "An F1 by F2 plot of two speakers' lobanov normalized vowel means."
+#| fig-alt: "An F1 by F2 plot of two speakers' Lobanov normalized vowel means."
 vowels_zscore2 %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1_z, F2_z), .fns = mean)) %>%
@@ -409,7 +414,7 @@ vowels_nearey %>%
 #| code-fold: true
 #| code-summary: "Plot code"
 #| label: fig-neary-norm
-#| fig-cap: "Speakers' vowel means in Nearey Normalized F1,F2 space."
+#| fig-cap: "An F1 by F2 plot of two speakers' Nearey normalized vowel means."
 #| fig-width: 6.5
 #| fig-height: 5
 vowels_nearey %>%
@@ -430,7 +435,7 @@ Again, the vowel spaces are largely overlapping. One thing that's not immediatel
 #| code-fold: true
 #| code-summary: "Plot code"
 #| label: fig-neary-norm-fixed
-#| fig-cap: "Speakers' vowel means in Nearey Normalized F1,F2 space (fixed coordinates)."
+#| fig-cap: "An F1 by F2 plot of two speakers' Nearey normalized vowel means. (fixed coordinates)."
 #| fig-width: 6.5
 #| fig-height: 2.5
 vowels_nearey %>%
@@ -474,6 +479,8 @@ vowels_nearey %>%
 
 The final normalization method we'll look at, which can't easily be done with a single sequence of tidyverse verbs, is the Watt & Fabricius method [@watt2002]. The idea behind the Watt & Fabricius method is to define a vowel space triangle for each speaker, then to scale their formant values to the triangle.
 
+#### Step 1: Getting the Triangle Points
+
 I'll follow the NORM suite and define the points of the triangle like so:
 
 -   Top Left Corner, "beet" point: The F1 of the vowel with the smallest F1, and the F2 of the vowel with the largest F2
@@ -485,6 +492,8 @@ I'll follow the NORM suite and define the points of the triangle like so:
 Here's how you can get those values per speaker:
 
 ```{r}
+#| label: tbl-wf-points
+#| tbl-cap: "The vowel triangle point values."
 vowels_inlie %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1, F2), mean)) %>%
@@ -495,12 +504,21 @@ vowels_inlie %>%
             bat_f2 = F2[F1 == max(F1)]) %>%
   mutate(school_f1 = beet_f1,
          school_f2 = beet_f1) %>%
-  knitr::kable(digits = 2)
+  # more verbs to go here
+  knitr::kable(digits = 0)
 ```
 
-In order to plot these points in an F1$\times$F2 space, we need to do a little `pivot_longer()` and `pivot_wider()` again.
+In order to plot these points in an F1$\times$F2 space, we need to do a little `pivot_longer()` and `pivot_wider()` again with the following steps:
+
+-   `pivot_longer()`, to stack the values of the columns between `beet_f1` and `school_f2` on top of eachother.
+
+-   Split the point names (e.g. "`beet_f1"`) into separate values (e.g. `"beet"` and `"beet"`) using `separate()`.
+
+-   `pivot_wider()` using the column with `"f1"` and `"f2"` to make the new column names.
 
 ```{r}
+#| label: tbl-wf-point-long
+#| tbl-cap: "The vowel triangle point values, long version"
 vowels_inlie %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1, F2), mean)) %>%
@@ -514,13 +532,20 @@ vowels_inlie %>%
   pivot_longer(cols = beet_f1:school_f2, names_to = "var", values_to = "hz") %>%
   separate(var, into = c("point", "formant")) %>%
   pivot_wider(names_from = formant, values_from = hz) -> wf_points
+
+wf_points %>%
+  knitr::kable(digits = 0)
 ```
+
+When we plot thee triangle points, we wind up with a plot that looks like a very simplified version of the vowel space from @fig-unnorm1.
 
 ```{r}
 #| code-fold: true
 #| code-summary: "Plot code"
+#| label: fig-wf-triangle
 #| fig-width: 6
 #| fig-height: 5
+#| fig-cap: "The vowel space triangles for the Watt & Fabricius method"
 wf_points %>%
   ggplot(aes(f2, f1))+
     geom_polygon(aes(fill = name, color = name), alpha = 0.6)+
@@ -531,25 +556,74 @@ wf_points %>%
     scale_color_vibrant()
 ```
 
+#### Step 2: Calculate Scaling Factors
+
+With the F1 and F2 of these triangle points, we then calculate scaling factors by just taking the mean of F1 and F2 for each speaker.
+
 ```{r}
+#| label: tbl-wf-scaler
+#| tbl-cap: "The Watt & Fabricius scaling factors"
 wf_points %>%
   group_by(name) %>%
   summarise(S1 = mean(f1),
            S2 = mean(f2)) -> wf_scalers
+
+wf_scalers %>%
+  knitr::kable(digits = 0)
 ```
 
+#### Step 3: Merging the scalers onto the original data.
+
+Now what we need to do is divide each speaker's F1 and F2 value by these scalers. Right now the speakers' original data is in `vowels_inlie` and the scaling values are in `wf_scalers`, so to do that division, we need to associate these two data frames.
+
+Fortunately, both `vowels_inlie` and `wf_scalers` have a column name in common: the speaker ID column `name`. That means we can merge `wf_scalers` onto `vowels_inlie` with a join operation. There are a few different `*_join()` functions in the tidyverse, and here I'll use `left_join()`.
+
+We need to tell `left_join()` the following information:
+
+-   Which two data frames are we joining together?
+
+    -   Since we're piping, the first data frame will appear on the left hand side of `%>%`, and the second data frame will be the first argument.
+
+-   Which columns should we use to join the data frames together?
+
+    -   `left_join()` will guess and try to join the data together using columns with the same name, but we can explicitly tell it which columns to use with the `by=` argument.
+
 ```{r}
+#| label: tbl-wf-join
+#| tbl-cap: "Speakers's scalers merged onto the original data"
 vowels_inlie %>%
-  left_join(wf_scalers) %>%
+  left_join(wf_scalers, by = "name") %>%
+  # more verbs to go here
+  # The group_by here is just to illustrate that each speaker's scalers were
+  # successfully merged
+  group_by(name) %>% slice (1:3) %>% knitr::kable(digits = 1)
+```
+
+#### Step 4: The actual normalization!
+
+Now all we need to do is divide F1 and F2 by their respective scaling factors to get the normalized Watt & Fabricius values.
+
+```{r}
+#| label: tbl-wf-norm
+#| tbl-cap: "Speakers' vowels Watt & Fabricius normalized"
+vowels_inlie %>%
+  left_join(wf_scalers, by = "name") %>%
   mutate(F1_wf = F1/S1,
          F2_wf = F2/S2)->vowels_wf
+
+vowels_wf %>%
+  group_by(name) %>% slice(1:3) %>% knitr::kable(digits = 2)
 ```
 
+#### Results!
+
 ```{r}
+#| label: fig-wf-norm
 #| code-fold: true
 #| code-summary: "Plot code"
 #| fig-width: 6
 #| fig-height: 5
+#| fig-cap: "An F1 by F2 plot of two speakers' Watt & Fabricius normalized vowel means."
 vowels_wf %>%
   group_by(name, ipa_vclass) %>%
   summarise(across(c(F1_wf, F2_wf), .fns = mean)) %>%
@@ -562,3 +636,17 @@ vowels_wf %>%
     scale_fill_vibrant()+
     coord_fixed()
 ```
+
+Again, we've got largely overlapping vowel spaces, and since F1 and F2 were normalized separately, they've got very comparable data ranges.
+
+## Final thoughts
+
+There there has been a *lot* written about vowel normalization methods, and I've barely covered most of the relevant topics discussed in the literature. For example:
+
+-   How well do these methods correspond to what *listeners* actually do when hearing people with different vowel spaces?
+
+-   Should we really be plotting and analyzing formants in Hz, or should the by converted to a psychoacoustic dimension, like Mel or Bark?
+
+-   Which method is the "Best"? What do we want a method to be "Best" *at*?
+
+Instead, I've covered some of most commonly used normalization methods, and also tried to provide an outline of how these methods correspond to specific data frame operations in the tidyverse.
