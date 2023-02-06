@@ -112,10 +112,10 @@ The variable `vowels_orig` is now one large data frame with both speakers' FAVE 
 #| tbl-cap-location: bottom
 #| results: markup
 set.seed(50)
-vowels_orig %>%
-  group_by(name) %>%
-  slice_sample(n = 3) %>%
-  knitr::kable()
+vowels_orig |>
+  group_by(name) |>
+  slice_sample(n = 3) |>
+  rmarkdown::paged_table()
 ```
 
 FAVE outputs a lot of useful information, but for this tutorial, I want to narrow down our focus to just a few columns
@@ -130,16 +130,16 @@ FAVE outputs a lot of useful information, but for this tutorial, I want to narro
 
 ```{r}
 #| label: vowel_focus
-vowels_orig %>%
+vowels_orig |>
   select(name, word, ipa_vclass, F1, F2) -> vowels_focus
 ```
 
 ```{r}
 #| label: tbl-vowel-focus
 #| tbl-cap: "The first few rows of the data we're going to work with"
-vowels_focus %>%
-  head() %>%
-  knitr::kable()
+vowels_focus |>
+  head() |>
+  rmarkdown::paged_table()
 ```
 
 ## Unnormalized
@@ -154,10 +154,10 @@ First, let's see how things look when we get our vowel means and plot them unnor
 #| fig-height: 5
 #| fig-cap: "Speakers' vowel means in unnormalized F1,F2 space."
 #| fig-alt: "An F1 by F2 plot of two speakers' unnormalized vowel means."
-vowels_focus %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), .fns = mean)) %>%
-  ungroup() %>%
+vowels_focus |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), .fns = mean)) |>
+  ungroup() |>
   ggplot(aes(F2, F1, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -179,10 +179,10 @@ Here, we see reason number 1 why we'll want to normalize vowels. These two speak
 #| fig-height: 2
 #| fig-cap: "Speakers' vowel means in unnormalized F1,F2 space. (fixed coords)"
 #| fig-alt: "An F1 by F2 plot of two speakers' unnormalized vowel means."
-vowels_focus %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), .fns = mean)) %>%
-  ungroup() %>%
+vowels_focus |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), .fns = mean)) |>
+  ungroup() |>
   ggplot(aes(F2, F1, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -200,11 +200,11 @@ The plot is squished because F2 just has that much larger a range of values than
 In order to get ready for normalization, I'm going to first filter out any vowel tokens that have a $\sqrt{\text{mahalanobis}}$ distance from its vowel class greater than 2.
 
 ```{r}
-vowels_focus %>%
-  group_by(name, ipa_vclass) %>%
+vowels_focus |>
+  group_by(name, ipa_vclass) |>
   mutate(mahal = joeyr::tidy_mahalanobis(F1, F2),
-         mahal_sq = sqrt(mahal)) %>%
-  filter(mahal_sq <= 2) %>%
+         mahal_sq = sqrt(mahal)) |>
+  filter(mahal_sq <= 2) |>
   ungroup() -> vowels_inlie
 ```
 
@@ -226,8 +226,8 @@ Since we already a have F1 and F2 separated out into separate columns, this mean
 
 ```{r}
 #| label: zscore1
-vowels_inlie %>%
-  group_by(name) %>%
+vowels_inlie |>
+  group_by(name) |>
   mutate(F1_z = (F1 - mean(F1))/sd(F1),
          F2_z = (F2 - mean(F2))/sd(F2)) -> vowels_score1
 ```
@@ -238,8 +238,8 @@ Since z-scoring is so common a thing to do in quantitative analysis, R actually 
 
 ```{r}
 #| label: zscore2
-vowels_inlie %>%
-  group_by(name) %>%
+vowels_inlie |>
+  group_by(name) |>
   mutate(F1_z = scale(F1),
          F2_z = scale(F2)) -> vowels_zscore2
 ```
@@ -256,9 +256,9 @@ Here's the results of z-scoring! We've got largely overlapping vowel spaces now.
 #| fig-height: 5
 #| fig-cap: "Speakers' vowel means in z-scored F1,F2 space. (fixed coords)"
 #| fig-alt: "An F1 by F2 plot of two speakers' Lobanov normalized vowel means."
-vowels_zscore2 %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1_z, F2_z), .fns = mean)) %>%
+vowels_zscore2 |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1_z, F2_z), .fns = mean)) |>
   ggplot(aes(F2_z, F1_z, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -275,8 +275,8 @@ Next, we'll look at what the vowels package calls "Nearey 2" normalization [@nea
 
 [^1]:
     ``` r
-    vowels_inlie %>%
-      group_by(name) %>%
+    vowels_inlie |>
+      group_by(name) |>
       mutate(F1_n = exp(log(F1) - mean(log(F1))),
              F2_n = exp(log(F2) - mean(log(F2))))
     ```
@@ -291,7 +291,7 @@ Next, we'll look at what the vowels package calls "Nearey 2" normalization [@nea
 
     -   "Anti-log" or exponentiate the result
 
-We need to combine F1 and F2 measurements together to get their mean, and this is best achieved in the tidyverse by "pivoting" the data frame from wide to long. We'll take it in steps. In each next step, I'm going to be putting additional tidyverse verbs between the data frame and the line that has `head() %>% knitr::kable()`, which is just there to provide nice looking output.
+We need to combine F1 and F2 measurements together to get their mean, and this is best achieved in the tidyverse by "pivoting" the data frame from wide to long. We'll take it in steps. In each next step, I'm going to be putting additional tidyverse verbs between the data frame and the line that has `head() |> rmarkdown::paged_table()`, which is just there to provide nice looking output.
 
 #### Step 1: Focus in on the columns of interest
 
@@ -300,10 +300,10 @@ The `vowels_inlie` has data columns for the mahalanobis distance, which I want t
 ```{r}
 #| label: tbl-nearey-focus
 #| tbl-cap: "The columns of importance for Neary 2"
-vowels_inlie %>%
-  select(name, word, ipa_vclass, F1, F2) %>%
+vowels_inlie |>
+  select(name, word, ipa_vclass, F1, F2) |>
   # more verbs to go here
-  head() %>% knitr::kable()
+  head() |> rmarkdown::paged_table()
 ```
 
 #### Step 2: Add an ID column
@@ -313,11 +313,11 @@ When we're pivoting our data long and then wide again, we need to have a column 
 ```{r}
 #| label: tbl-nearey-id
 #| tbl-cap: "The formant data with a token ID for each observation"
-vowels_inlie %>%
-  select(name, word, ipa_vclass, F1, F2) %>%
-  mutate(id = 1:n()) %>%
+vowels_inlie |>
+  select(name, word, ipa_vclass, F1, F2) |>
+  mutate(id = 1:n()) |>
   # more verbs to go here
-  head() %>% knitr::kable()
+  head() |> rmarkdown::paged_table()
 ```
 
 #### Step 3: Pivot Longer
@@ -339,14 +339,14 @@ Now, we want to take the F1 and F2 columns, and stack them one on top of each ot
 ```{r}
 #| label: tbl-nearey-long
 #| tbl-cap: "The formant data, pivoted long"
-vowels_inlie %>%
-  select(name, word, ipa_vclass, F1, F2) %>%
-  mutate(id = 1:n()) %>%
+vowels_inlie |>
+  select(name, word, ipa_vclass, F1, F2) |>
+  mutate(id = 1:n()) |>
   pivot_longer(cols = F1:F2, 
                names_to = "formant", 
-               values_to = "hz") %>%  
+               values_to = "hz") |>  
   # more verbs to go here
-  head(12) %>% knitr::kable()
+  head(12) |> rmarkdown::paged_table()
 ```
 
 You can get an idea for what `pivot_longer()` has done by comparing this table (@tbl-nearey-long) to the table before (@tbl-nearey-id). There are two rows in this long table for every row in the wide table. The `name`, `word`, `ipa_vclass`, and `id` values are repeated twice. There's also a new `formant` column, which contains the column names we pivoted longer, and a new `hz` column, which contains the values from the columns we pivoted longer.
@@ -358,16 +358,16 @@ Now we can do the actual normalization. The column we'll target is the new `hz` 
 ```{r}
 #| label: tbl-nearey-norm
 #| tbl-cap: "The formant data, pivoted long, and normalized"
-vowels_inlie %>%
-  select(name, word, ipa_vclass, F1, F2) %>%
-  mutate(id = 1:n()) %>%
+vowels_inlie |>
+  select(name, word, ipa_vclass, F1, F2) |>
+  mutate(id = 1:n()) |>
   pivot_longer(cols = F1:F2, 
                names_to = "formant", 
-               values_to = "hz") %>%
-  group_by(name) %>%
-  mutate(nearey = exp(log(hz)-mean(log(hz))))%>%  
+               values_to = "hz") |>
+  group_by(name) |>
+  mutate(nearey = exp(log(hz)-mean(log(hz))))|>  
   # more verbs to go here
-  head(12) %>% knitr::kable(digits = 3)
+  head(12) |> rmarkdown::paged_table()
 ```
 
 #### Step 5: Pivoting wide again, for plotting
@@ -391,19 +391,19 @@ After this step, we're done the normalizing process, so I'll assign the result t
 ```{r}
 #| label: tbl-neary-wide
 #| tbl-cap: "Nearey Normalized Vowels, wide again"
-vowels_inlie %>%
-  select(name, word, ipa_vclass, F1, F2) %>%
-  mutate(id = 1:n()) %>%
+vowels_inlie |>
+  select(name, word, ipa_vclass, F1, F2) |>
+  mutate(id = 1:n()) |>
   pivot_longer(cols = F1:F2, 
                names_to = "formant", 
-               values_to = "hz") %>%
-  group_by(name) %>%
-  mutate(nearey = exp(log(hz)-mean(log(hz))))%>%  
-  select(-hz) %>%
+               values_to = "hz") |>
+  group_by(name) |>
+  mutate(nearey = exp(log(hz)-mean(log(hz))))|>  
+  select(-hz) |>
   pivot_wider(names_from = formant, values_from = nearey) -> vowels_nearey
 
-vowels_nearey %>%
-  head() %>% knitr::kable(digits = 3)
+vowels_nearey |>
+  head() |> rmarkdown::paged_table()
 
 ```
 
@@ -416,9 +416,9 @@ vowels_nearey %>%
 #| fig-cap: "An F1 by F2 plot of two speakers' Nearey normalized vowel means."
 #| fig-width: 6.5
 #| fig-height: 5
-vowels_nearey %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), .fns = mean)) %>%
+vowels_nearey |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), .fns = mean)) |>
   ggplot(aes(F2, F1, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -437,9 +437,9 @@ Again, the vowel spaces are largely overlapping. One thing that's not immediatel
 #| fig-cap: "An F1 by F2 plot of two speakers' Nearey normalized vowel means. (fixed coordinates)."
 #| fig-width: 6.5
 #| fig-height: 2.5
-vowels_nearey %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), .fns = mean)) %>%
+vowels_nearey |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), .fns = mean)) |>
   ggplot(aes(F2, F1, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -461,9 +461,9 @@ It gets better if we plot the log of the normalized values[^3], but then the vow
 #| fig-cap: "Speakers' vowel means in Log Nearey Normalized F1,F2 space (fixed coordinates)."
 #| fig-width: 6.5
 #| fig-height: 5
-vowels_nearey %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), .fns = ~mean(log(.x)))) %>%
+vowels_nearey |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), .fns = ~mean(log(.x)))) |>
   ggplot(aes(F2, F1, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
@@ -493,18 +493,18 @@ Here's how you can get those values per speaker:
 ```{r}
 #| label: tbl-wf-points
 #| tbl-cap: "The vowel triangle point values."
-vowels_inlie %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), mean)) %>%
-  group_by(name) %>%
+vowels_inlie |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), mean)) |>
+  group_by(name) |>
   summarise(beet_f1 = min(F1),
             beet_f2 = max(F2),
             bat_f1 = max(F1),
-            bat_f2 = F2[F1 == max(F1)]) %>%
+            bat_f2 = F2[F1 == max(F1)]) |>
   mutate(school_f1 = beet_f1,
-         school_f2 = beet_f1) %>%
+         school_f2 = beet_f1) |>
   # more verbs to go here
-  knitr::kable(digits = 0)
+ rmarkdown::paged_table()
 ```
 
 In order to plot these points in an F1$\times$F2 space, we need to do a little `pivot_longer()` and `pivot_wider()` again with the following steps:
@@ -518,22 +518,22 @@ In order to plot these points in an F1$\times$F2 space, we need to do a little `
 ```{r}
 #| label: tbl-wf-point-long
 #| tbl-cap: "The vowel triangle point values, long version"
-vowels_inlie %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1, F2), mean)) %>%
-  group_by(name) %>%
+vowels_inlie |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1, F2), mean)) |>
+  group_by(name) |>
   summarise(beet_f1 = min(F1),
             beet_f2 = max(F2),
             bat_f1 = max(F1),
-            bat_f2 = F2[F1 == max(F1)]) %>%
+            bat_f2 = F2[F1 == max(F1)]) |>
   mutate(school_f1 = beet_f1,
-         school_f2 = beet_f1) %>%
-  pivot_longer(cols = beet_f1:school_f2, names_to = "var", values_to = "hz") %>%
-  separate(var, into = c("point", "formant")) %>%
+         school_f2 = beet_f1) |>
+  pivot_longer(cols = beet_f1:school_f2, names_to = "var", values_to = "hz") |>
+  separate(var, into = c("point", "formant")) |>
   pivot_wider(names_from = formant, values_from = hz) -> wf_points
 
-wf_points %>%
-  knitr::kable(digits = 0)
+wf_points |>
+  rmarkdown::paged_table()
 ```
 
 When we plot thee triangle points, we wind up with a plot that looks like a very simplified version of the vowel space from @fig-unnorm1.
@@ -545,7 +545,7 @@ When we plot thee triangle points, we wind up with a plot that looks like a very
 #| fig-width: 6
 #| fig-height: 5
 #| fig-cap: "The vowel space triangles for the Watt & Fabricius method"
-wf_points %>%
+wf_points |>
   ggplot(aes(f2, f1))+
     geom_polygon(aes(fill = name, color = name), alpha = 0.6)+
     geom_text(aes(label = point))+
@@ -562,13 +562,13 @@ With the F1 and F2 of these triangle points, we then calculate scaling factors b
 ```{r}
 #| label: tbl-wf-scaler
 #| tbl-cap: "The Watt & Fabricius scaling factors"
-wf_points %>%
-  group_by(name) %>%
+wf_points |>
+  group_by(name) |>
   summarise(S1 = mean(f1),
            S2 = mean(f2)) -> wf_scalers
 
-wf_scalers %>%
-  knitr::kable(digits = 0)
+wf_scalers |>
+ rmarkdown::paged_table()
 ```
 
 #### Step 3: Merging the scalers onto the original data.
@@ -581,7 +581,7 @@ We need to tell `left_join()` the following information:
 
 -   Which two data frames are we joining together?
 
-    -   Since we're piping, the first data frame will appear on the left hand side of `%>%`, and the second data frame will be the first argument.
+    -   Since we're piping, the first data frame will appear on the left hand side of `|>`, and the second data frame will be the first argument.
 
 -   Which columns should we use to join the data frames together?
 
@@ -590,12 +590,12 @@ We need to tell `left_join()` the following information:
 ```{r}
 #| label: tbl-wf-join
 #| tbl-cap: "Speakers's scalers merged onto the original data"
-vowels_inlie %>%
-  left_join(wf_scalers, by = "name") %>%
+vowels_inlie |>
+  left_join(wf_scalers, by = "name") |>
   # more verbs to go here
   # The group_by here is just to illustrate that each speaker's scalers were
   # successfully merged
-  group_by(name) %>% slice (1:3) %>% knitr::kable(digits = 1)
+  group_by(name) |> slice (1:3) |> rmarkdown::paged_table()
 ```
 
 #### Step 4: The actual normalization!
@@ -605,13 +605,13 @@ Now all we need to do is divide F1 and F2 by their respective scaling factors to
 ```{r}
 #| label: tbl-wf-norm
 #| tbl-cap: "Speakers' vowels Watt & Fabricius normalized"
-vowels_inlie %>%
-  left_join(wf_scalers, by = "name") %>%
+vowels_inlie |>
+  left_join(wf_scalers, by = "name") |>
   mutate(F1_wf = F1/S1,
          F2_wf = F2/S2)->vowels_wf
 
-vowels_wf %>%
-  group_by(name) %>% slice(1:3) %>% knitr::kable(digits = 2)
+vowels_wf |>
+  group_by(name) |> slice(1:3) |> rmarkdown::paged_table()
 ```
 
 #### Results!
@@ -623,9 +623,9 @@ vowels_wf %>%
 #| fig-width: 6
 #| fig-height: 5
 #| fig-cap: "An F1 by F2 plot of two speakers' Watt & Fabricius normalized vowel means."
-vowels_wf %>%
-  group_by(name, ipa_vclass) %>%
-  summarise(across(c(F1_wf, F2_wf), .fns = mean)) %>%
+vowels_wf |>
+  group_by(name, ipa_vclass) |>
+  summarise(across(c(F1_wf, F2_wf), .fns = mean)) |>
   ggplot(aes(F2_wf, F1_wf, color = name))+
     geom_text(aes(label = ipa_vclass))+
     ggforce::geom_mark_hull(aes(fill = name))+
