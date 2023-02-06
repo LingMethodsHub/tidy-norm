@@ -15,7 +15,7 @@ categories:
 
 ```{r}
 #| echo: false
-source(".Rprofile")
+#source(".Rprofile")
 ```
 
 This is a tutorial about how to "normalize" vowel formant data using data tools from the [tidyverse](https://www.tidyverse.org/). A *lot* has been written about vowel normalization (why we do it, how it should work, what methods are best) that I can't really cover here, although @Adank2004 is often taken as the canonical citation, and I'll be taking into account the recent "order of operations" from @stanley2022.
